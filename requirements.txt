@@ -1,0 +1,391 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from datetime import datetime, timedelta
+import warnings
+warnings.filterwarnings('ignore')
+
+# Set style
+sns.set_style("whitegrid")
+plt.rcParams['figure.figsize'] = (12, 6)
+
+# Generate Realistic Customer Churn Dataset
+def generate_customer_data():
+    """Generate realistic subscription customer data with churn information"""
+    
+    np.random.seed(42)
+    
+    customers = []
+    customer_id = 1
+    
+    # Subscription plans
+    plans = [
+        {'name': 'Basic', 'price': 29, 'churn_base': 0.30},
+        {'name': 'Standard', 'price': 79, 'churn_base': 0.22},
+        {'name': 'Premium', 'price': 149, 'churn_base': 0.15}
+    ]
+    
+    churn_reasons = ['Price', 'Service Quality', 'Competition', 'Features', 'Support']
+    
+    # Generate cohorts for 12 months
+    start_date = datetime(2023, 1, 1)
+    
+    for cohort_month in range(12):
+        cohort_date = start_date + timedelta(days=30 * cohort_month)
+        cohort_size = np.random.randint(150, 250)
+        
+        for i in range(cohort_size):
+            plan = plans[np.random.choice(len(plans), p=[0.5, 0.35, 0.15])]
+            
+            # Determine engagement and churn
+            engagement_score = np.random.randint(1, 101)
+            support_tickets = np.random.poisson(2)
+            
+            # Churn probability based on multiple factors
+            churn_prob = plan['churn_base']
+            churn_prob += 0.02 * cohort_month  # Increase over time
+            churn_prob += 0.001 * support_tickets  # More tickets = higher churn
+            churn_prob -= 0.001 * engagement_score  # Higher engagement = lower churn
+            
+            churned = np.random.random() < churn_prob
+            
+            # Calculate months active
+            max_months = 12 - cohort_month
+            if churned:
+                months_active = np.random.randint(1, max(2, max_months))
+            else:
+                months_active = max_months
+            
+            churn_date = None
+            churn_reason = None
+            
+            if churned:
+                churn_date = cohort_date + timedelta(days=30 * months_active)
+                churn_reason = np.random.choice(churn_reasons)
+            
+            lifetime_value = months_active * plan['price']
+            
+            customers.append({
+                'Customer_ID': customer_id,
+                'Cohort': cohort_date.strftime('%Y-%m'),
+                'Cohort_Month': cohort_month,
+                'Signup_Date': cohort_date.strftime('%Y-%m-%d'),
+                'Plan': plan['name'],
+                'Monthly_Revenue': plan['price'],
+                'Months_Active': months_active,
+                'Churned': 1 if churned else 0,
+                'Churn_Date': churn_date.strftime('%Y-%m-%d') if churn_date else None,
+                'Churn_Reason': churn_reason,
+                'Lifetime_Value': lifetime_value,
+                'Engagement_Score': engagement_score,
+                'Support_Tickets': support_tickets
+            })
+            
+            customer_id += 1
+    
+    return pd.DataFrame(customers)
+
+# Create dataset
+df = generate_customer_data()
+
+print("="*80)
+print("CUSTOMER RETENTION & CHURN ANALYSIS")
+print("="*80)
+print(f"\nDataset Overview:")
+print(f"Total Customers: {len(df):,}")
+print(f"Date Range: {df['Signup_Date'].min()} to {df['Signup_Date'].max()}")
+print(f"\nFirst few records:")
+print(df.head(10))
+
+# Save dataset
+df.to_csv('customer_churn_data.csv', index=False)
+print(f"\n✓ Dataset saved as 'customer_churn_data.csv'")
+
+# ============================================================================
+# 1. KEY PERFORMANCE INDICATORS (KPIs)
+# ============================================================================
+print("\n" + "="*80)
+print("1. KEY RETENTION & CHURN METRICS")
+print("="*80)
+
+total_customers = len(df)
+churned_customers = df['Churned'].sum()
+active_customers = total_customers - churned_customers
+churn_rate = (churned_customers / total_customers * 100)
+retention_rate = 100 - churn_rate
+
+avg_lifetime_value = df['Lifetime_Value'].mean()
+avg_months_active = df['Months_Active'].mean()
+total_revenue = df['Lifetime_Value'].sum()
+
+print(f"\n📊 Overall Customer Metrics:")
+print(f"   Total Customers:         {total_customers:,}")
+print(f"   Active Customers:        {active_customers:,}")
+print(f"   Churned Customers:       {churned_customers:,}")
+print(f"   Churn Rate:              {churn_rate:.2f}%")
+print(f"   Retention Rate:          {retention_rate:.2f}%")
+print(f"\n💰 Revenue Metrics:")
+print(f"   Total Revenue:           ${total_revenue:,.2f}")
+print(f"   Avg Lifetime Value:      ${avg_lifetime_value:.2f}")
+print(f"   Avg Months Active:       {avg_months_active:.1f} months")
+
+# ============================================================================
+# 2. CHURN ANALYSIS BY SEGMENT
+# ============================================================================
+print("\n" + "="*80)
+print("2. CHURN ANALYSIS BY SUBSCRIPTION PLAN")
+print("="*80)
+
+plan_analysis = df.groupby('Plan').agg({
+    'Customer_ID': 'count',
+    'Churned': 'sum',
+    'Lifetime_Value': 'mean',
+    'Months_Active': 'mean',
+    'Engagement_Score': 'mean'
+}).round(2)
+
+plan_analysis.columns = ['Total_Customers', 'Churned', 'Avg_LTV', 'Avg_Months', 'Avg_Engagement']
+plan_analysis['Active'] = plan_analysis['Total_Customers'] - plan_analysis['Churned']
+plan_analysis['Churn_Rate_%'] = (plan_analysis['Churned'] / plan_analysis['Total_Customers'] * 100).round(2)
+plan_analysis['Retention_Rate_%'] = (100 - plan_analysis['Churn_Rate_%']).round(2)
+
+print("\n📊 Plan-Wise Performance:")
+print(plan_analysis)
+
+# ============================================================================
+# 3. CHURN REASONS ANALYSIS
+# ============================================================================
+print("\n" + "="*80)
+print("3. TOP CHURN REASONS")
+print("="*80)
+
+churn_reasons = df[df['Churned'] == 1].groupby('Churn_Reason').agg({
+    'Customer_ID': 'count'
+}).sort_values('Customer_ID', ascending=False)
+
+churn_reasons.columns = ['Count']
+churn_reasons['Percentage'] = (churn_reasons['Count'] / churned_customers * 100).round(2)
+
+print("\n🔍 Churn Reason Breakdown:")
+print(churn_reasons)
+
+top_reason = churn_reasons.index[0]
+top_reason_pct = churn_reasons.iloc[0]['Percentage']
+print(f"\n⚠️  Primary Churn Driver: {top_reason} ({top_reason_pct}% of churned customers)")
+
+# ============================================================================
+# 4. COHORT RETENTION ANALYSIS
+# ============================================================================
+print("\n" + "="*80)
+print("4. COHORT RETENTION ANALYSIS")
+print("="*80)
+
+cohort_analysis = df.groupby('Cohort').agg({
+    'Customer_ID': 'count',
+    'Churned': 'sum',
+    'Months_Active': 'mean',
+    'Lifetime_Value': 'mean'
+}).round(2)
+
+cohort_analysis.columns = ['Total_Customers', 'Churned', 'Avg_Months', 'Avg_LTV']
+cohort_analysis['Active'] = cohort_analysis['Total_Customers'] - cohort_analysis['Churned']
+cohort_analysis['Retention_Rate_%'] = ((cohort_analysis['Active'] / cohort_analysis['Total_Customers']) * 100).round(2)
+
+print("\n📅 Cohort Performance (First 6 months):")
+print(cohort_analysis.head(6))
+
+# ============================================================================
+# 5. CUSTOMER LIFETIME VALUE ANALYSIS
+# ============================================================================
+print("\n" + "="*80)
+print("5. CUSTOMER LIFETIME VALUE (LTV) ANALYSIS")
+print("="*80)
+
+# LTV by Plan
+ltv_by_plan = df.groupby('Plan')['Lifetime_Value'].agg(['mean', 'median', 'max']).round(2)
+ltv_by_plan.columns = ['Mean_LTV', 'Median_LTV', 'Max_LTV']
+
+print("\n💵 Lifetime Value by Plan:")
+print(ltv_by_plan)
+
+# LTV by Churn Status
+ltv_by_status = df.groupby('Churned')['Lifetime_Value'].agg(['mean', 'median']).round(2)
+ltv_by_status.index = ['Active', 'Churned']
+ltv_by_status.columns = ['Mean_LTV', 'Median_LTV']
+
+print("\n💵 Lifetime Value by Status:")
+print(ltv_by_status)
+
+# ============================================================================
+# 6. ENGAGEMENT & SUPPORT ANALYSIS
+# ============================================================================
+print("\n" + "="*80)
+print("6. ENGAGEMENT & SUPPORT CORRELATION")
+print("="*80)
+
+engagement_analysis = df.groupby('Churned').agg({
+    'Engagement_Score': 'mean',
+    'Support_Tickets': 'mean',
+    'Months_Active': 'mean'
+}).round(2)
+
+engagement_analysis.index = ['Active Customers', 'Churned Customers']
+
+print("\n📊 Engagement Metrics Comparison:")
+print(engagement_analysis)
+
+# ============================================================================
+# 7. VISUALIZATIONS
+# ============================================================================
+print("\n" + "="*80)
+print("7. GENERATING VISUALIZATIONS")
+print("="*80)
+
+fig = plt.figure(figsize=(16, 12))
+
+# 1. Monthly Churn Rate Trend
+ax1 = plt.subplot(3, 2, 1)
+monthly_churn = df.groupby('Cohort_Month').agg({
+    'Customer_ID': 'count',
+    'Churned': 'sum'
+})
+monthly_churn['Churn_Rate'] = (monthly_churn['Churned'] / monthly_churn['Customer_ID'] * 100)
+months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+ax1.plot(range(12), monthly_churn['Churn_Rate'].values, marker='o', linewidth=2, markersize=8, color='#ef4444')
+ax1.fill_between(range(12), monthly_churn['Churn_Rate'].values, alpha=0.3, color='#ef4444')
+ax1.set_xlabel('Month', fontsize=10, fontweight='bold')
+ax1.set_ylabel('Churn Rate (%)', fontsize=10, fontweight='bold')
+ax1.set_title('Monthly Churn Rate Trend', fontsize=12, fontweight='bold', pad=15)
+ax1.set_xticks(range(12))
+ax1.set_xticklabels(months, rotation=45)
+ax1.grid(True, alpha=0.3)
+
+# 2. Churn by Plan
+ax2 = plt.subplot(3, 2, 2)
+plan_churn = plan_analysis['Churn_Rate_%'].sort_values()
+colors = ['#10b981', '#3b82f6', '#ef4444']
+bars = ax2.barh(range(len(plan_churn)), plan_churn.values, color=colors)
+ax2.set_yticks(range(len(plan_churn)))
+ax2.set_yticklabels(plan_churn.index)
+ax2.set_xlabel('Churn Rate (%)', fontsize=10, fontweight='bold')
+ax2.set_title('Churn Rate by Subscription Plan', fontsize=12, fontweight='bold', pad=15)
+ax2.grid(True, alpha=0.3, axis='x')
+
+# 3. Top Churn Reasons
+ax3 = plt.subplot(3, 2, 3)
+top_reasons = churn_reasons.head(5).sort_values('Count')
+colors_reasons = ['#8b5cf6', '#3b82f6', '#f59e0b', '#ef4444', '#10b981']
+ax3.barh(range(len(top_reasons)), top_reasons['Count'].values, color=colors_reasons)
+ax3.set_yticks(range(len(top_reasons)))
+ax3.set_yticklabels(top_reasons.index)
+ax3.set_xlabel('Number of Customers', fontsize=10, fontweight='bold')
+ax3.set_title('Top 5 Churn Reasons', fontsize=12, fontweight='bold', pad=15)
+ax3.grid(True, alpha=0.3, axis='x')
+
+# 4. Cohort Retention
+ax4 = plt.subplot(3, 2, 4)
+cohort_retention = cohort_analysis['Retention_Rate_%'].head(6)
+ax4.plot(range(len(cohort_retention)), cohort_retention.values, marker='s', linewidth=2, markersize=8, color='#8b5cf6')
+ax4.set_xlabel('Cohort', fontsize=10, fontweight='bold')
+ax4.set_ylabel('Retention Rate (%)', fontsize=10, fontweight='bold')
+ax4.set_title('Cohort Retention Analysis', fontsize=12, fontweight='bold', pad=15)
+ax4.set_xticks(range(len(cohort_retention)))
+ax4.set_xticklabels(cohort_retention.index, rotation=45)
+ax4.grid(True, alpha=0.3)
+
+# 5. LTV by Plan
+ax5 = plt.subplot(3, 2, 5)
+ltv_plan = ltv_by_plan['Mean_LTV'].sort_values()
+bars = ax5.bar(range(len(ltv_plan)), ltv_plan.values, color=['#10b981', '#3b82f6', '#8b5cf6'])
+ax5.set_xticks(range(len(ltv_plan)))
+ax5.set_xticklabels(ltv_plan.index)
+ax5.set_ylabel('Average LTV ($)', fontsize=10, fontweight='bold')
+ax5.set_title('Average Lifetime Value by Plan', fontsize=12, fontweight='bold', pad=15)
+ax5.grid(True, alpha=0.3, axis='y')
+
+# 6. Active vs Churned Distribution
+ax6 = plt.subplot(3, 2, 6)
+status_counts = [active_customers, churned_customers]
+labels = ['Active', 'Churned']
+colors_pie = ['#10b981', '#ef4444']
+wedges, texts, autotexts = ax6.pie(status_counts, labels=labels, autopct='%1.1f%%',
+                                     colors=colors_pie, startangle=90)
+for autotext in autotexts:
+    autotext.set_color('white')
+    autotext.set_fontweight('bold')
+ax6.set_title('Customer Status Distribution', fontsize=12, fontweight='bold', pad=15)
+
+plt.tight_layout()
+plt.savefig('churn_analysis_dashboard.png', dpi=300, bbox_inches='tight')
+print("\n✓ Visualizations saved as 'churn_analysis_dashboard.png'")
+
+# ============================================================================
+# 8. KEY INSIGHTS & RECOMMENDATIONS
+# ============================================================================
+print("\n" + "="*80)
+print("8. KEY INSIGHTS & ACTIONABLE RECOMMENDATIONS")
+print("="*80)
+
+print("\n📊 CHURN INSIGHTS:")
+print(f"   • Overall churn rate is {churn_rate:.1f}%, with {churned_customers:,} customers lost")
+print(f"   • Retention rate stands at {retention_rate:.1f}%")
+print(f"   • Primary churn reason: {top_reason} ({top_reason_pct}% of cases)")
+print(f"   • Basic plan shows highest churn at {plan_analysis.loc['Basic', 'Churn_Rate_%']:.1f}%")
+
+print("\n💰 REVENUE INSIGHTS:")
+print(f"   • Average customer lifetime value: ${avg_lifetime_value:.2f}")
+print(f"   • Premium customers have {ltv_by_plan.loc['Premium', 'Mean_LTV']/ltv_by_plan.loc['Basic', 'Mean_LTV']:.1f}x higher LTV than Basic")
+print(f"   • Churned customers had average LTV of ${ltv_by_status.loc['Churned', 'Mean_LTV']:.2f}")
+
+print("\n🎯 RETENTION DRIVERS:")
+active_engagement = engagement_analysis.loc['Active Customers', 'Engagement_Score']
+churned_engagement = engagement_analysis.loc['Churned Customers', 'Engagement_Score']
+print(f"   • Active customers show {active_engagement:.0f}% higher engagement scores")
+print(f"   • Support ticket volume correlates with churn probability")
+print(f"   • Premium plan retention rate: {plan_analysis.loc['Premium', 'Retention_Rate_%']:.1f}%")
+
+print("\n💡 STRATEGIC RECOMMENDATIONS:")
+print("\n   1. Address Price Sensitivity:")
+print(f"      → Implement flexible pricing tiers and discount programs")
+print(f"      → Create value-added bundles to justify pricing")
+print(f"      → Reduce churn by {top_reason_pct/2:.1f}% through targeted pricing strategies")
+
+print("\n   2. Enhance Service Quality:")
+print("      → Improve customer support response times")
+print("      → Implement proactive outreach for at-risk customers")
+print("      → Reduce support tickets through better onboarding")
+
+print("\n   3. Improve Product Features:")
+print("      → Analyze competitor offerings")
+print("      → Implement requested features based on feedback")
+print("      → Create feature differentiation across plans")
+
+print("\n   4. Boost Customer Engagement:")
+print(f"      → Launch engagement programs to increase scores")
+print("      → Create loyalty rewards for long-term customers")
+print("      → Implement usage-based interventions")
+
+print("\n   5. Implement Retention Programs:")
+print("      → Create win-back campaigns for churned customers")
+print("      → Offer upgrade incentives to Basic plan users")
+print("      → Implement early warning system for churn prediction")
+
+print("\n📈 EXPECTED IMPACT:")
+potential_revenue_saved = churned_customers * avg_lifetime_value * 0.05
+print(f"   • Reducing churn by 5% could save: ${potential_revenue_saved:,.2f}")
+print(f"   • Increasing average tenure by 1 month adds: ${total_customers * 79:,.2f}")
+print(f"   • Converting 10% of Basic to Standard: ${len(df[df['Plan']=='Basic']) * 0.1 * 50 * 12:,.2f} annually")
+
+print("\n" + "="*80)
+print("ANALYSIS COMPLETE")
+print("="*80)
+print("\nFiles Generated:")
+print("  ✓ customer_churn_data.csv - Customer dataset with churn indicators")
+print("  ✓ churn_analysis_dashboard.png - Comprehensive visual dashboard")
+print("\nNext Steps:")
+print("  → Upload to GitHub repository: FUTURE_DS_02")
+print("  → Implement retention strategies based on insights")
+print("  → Monitor KPIs monthly for improvement")
+print("  → Submit through Task Submission Portal")
+print("="*80)
